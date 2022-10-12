@@ -46,7 +46,7 @@ extern const char __STABSTR_END__[];		// End of string table
 //		left = 0, right = 657;
 //		stab_binsearch(stabs, &left, &right, N_SO, 0xf0100184);
 //	will exit setting left = 118, right = 554.
-//
+// Find the address range of a certain type that contains the corresponding address:TA
 static void
 stab_binsearch(const struct Stab *stabs, int *region_left, int *region_right,
 	       int type, uintptr_t addr)
@@ -180,7 +180,9 @@ debuginfo_eip(uintptr_t addr, struct Eipdebuginfo *info)
 	//	which one.
 	// Your code here.
 
-
+	stab_binsearch(stabs,&lline,&rline,N_SLINE,addr);
+	if(lline>rline)return -1;
+	info->eip_line=stabs[lline].n_desc;
 	// Search backwards from the line number for the relevant filename
 	// stab.
 	// We can't just use the "lfile" stab because inlined functions
