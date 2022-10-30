@@ -65,6 +65,9 @@ void	tlb_invalidate(pde_t *pgdir, void *va);
 static inline physaddr_t
 page2pa(struct PageInfo *pp)
 {
+	//pages storage 0-npages physical address,emmm ,
+	//Probably the first block, the second block...., 
+	//but the address in the program contains the array base address pages, so it is necessary to subtract
 	return (pp - pages) << PGSHIFT;
 }
 
