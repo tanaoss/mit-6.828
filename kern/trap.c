@@ -14,6 +14,15 @@
 #include <kern/cpu.h>
 #include <kern/spinlock.h>
 
+
+#define DECLARE_TRAPENTRY(func_name, entry_num, privLevel) \
+    extern void func_name();                \
+    SETGATE(idt[entry_num], 1, GD_KT, &func_name, privLevel)
+
+#define DECLARE_INTENTRY(funcName, intNumber, privLevel) \
+    extern void funcName();                \
+    SETGATE(idt[intNumber], 0, GD_KT, &funcName, privLevel)
+
 static struct Taskstate ts;
 
 /* For debugging, so print_trapframe can distinguish between printing
@@ -64,6 +73,7 @@ static const char *trapname(int trapno)
 		return "Hardware Interrupt";
 	return "(unknown trap)";
 }
+static void handle_syscall(struct Trapframe *tf);
 
 
 void
@@ -72,7 +82,26 @@ trap_init(void)
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+    DECLARE_INTENTRY(t_divide, T_DIVIDE, 0)
+    DECLARE_INTENTRY(t_debug, T_DEBUG, 3)
+    DECLARE_INTENTRY(t_nmi, T_NMI, 0)
+    DECLARE_INTENTRY(t_brkpt, T_BRKPT, 3)
+    DECLARE_INTENTRY(t_oflow, T_OFLOW, 0)
+    DECLARE_INTENTRY(t_bound, T_BOUND, 0)
+    DECLARE_INTENTRY(t_illop, T_ILLOP, 0)
+    DECLARE_INTENTRY(t_device, T_DEVICE, 0)
+    DECLARE_INTENTRY(t_dblflt, T_DBLFLT, 0)
+    DECLARE_INTENTRY(t_tss, T_TSS, 0)
+    DECLARE_INTENTRY(t_segnp, T_SEGNP, 0)
+    DECLARE_INTENTRY(t_stack, T_STACK, 0)
+    DECLARE_INTENTRY(t_gpflt, T_GPFLT, 3)
+    DECLARE_INTENTRY(t_pgflt, T_PGFLT, 0)
+    DECLARE_INTENTRY(t_fperr, T_FPERR, 0)
+    DECLARE_INTENTRY(t_align, T_ALIGN, 0)
+    DECLARE_INTENTRY(t_mchk, T_MCHK, 0)
+    DECLARE_INTENTRY(t_simderr, T_SIMDERR, 0)
 
+    DECLARE_INTENTRY(t_syscall, T_SYSCALL, 3)
 	// Per-CPU setup 
 	trap_init_percpu();
 }
@@ -177,19 +206,6 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
 
-	// Handle spurious interrupts
-	// The hardware sometimes raises these because of noise on the
-	// IRQ line or other reasons. We don't care.
-	if (tf->tf_trapno == IRQ_OFFSET + IRQ_SPURIOUS) {
-		cprintf("Spurious interrupt on irq 7\n");
-		print_trapframe(tf);
-		return;
-	}
-
-	// Handle clock interrupts. Don't forget to acknowledge the
-	// interrupt using lapic_eoi() before calling the scheduler!
-	// LAB 4: Your code here.
-
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
 	if (tf->tf_cs == GD_KT)
@@ -271,7 +287,10 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
-
+    if ((tf->tf_cs & 3) != 3) {
+        // tf comes from user mode
+	    panic("Page fault in kernel mode!\n");
+	}
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
 
@@ -313,3 +332,9 @@ page_fault_handler(struct Trapframe *tf)
 	env_destroy(curenv);
 }
 
+static void handle_syscall(struct Trapframe *tf) {
+    // this function extracts registers from Trapframe and passes them onto real syscall dispatcher
+    struct PushRegs *pushRegs = &tf->tf_regs;
+    pushRegs->reg_eax = syscall(pushRegs->reg_eax, pushRegs->reg_edx, 
+	pushRegs->reg_ecx, pushRegs->reg_ebx, pushRegs->reg_edi, pushRegs->reg_esi);
+}
