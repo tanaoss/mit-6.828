@@ -2,6 +2,8 @@
     "files.associations": {
         "env.h": "c",
         "trap.h": "c",
-        "console.h": "c"
+        "console.h": "c",
+        "lib.h": "c",
+        "syscall.h": "c"
     }
 }
