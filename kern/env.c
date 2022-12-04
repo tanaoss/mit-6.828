@@ -76,13 +76,13 @@ int
 envid2env(envid_t envid, struct Env **env_store, bool checkperm)
 {
 	struct Env *e;
-
+	// cprintf("inter\n");
 	// If envid is zero, return the current environment.
 	if (envid == 0) {
 		*env_store = curenv;
 		return 0;
 	}
-
+// cprintf("inter1\n");
 	// Look up the Env structure via the index part of the envid,
 	// then check the env_id field in that struct Env
 	// to ensure that the envid is not stale
@@ -93,17 +93,18 @@ envid2env(envid_t envid, struct Env **env_store, bool checkperm)
 		*env_store = 0;
 		return -E_BAD_ENV;
 	}
-
+// cprintf("inter2\n");
 	// Check that the calling environment has legitimate permission
 	// to manipulate the specified environment.
 	// If checkperm is set, the specified environment
 	// must be either the current environment
 	// or an immediate child of the current environment.
 	if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
+		// cprintf("%d..",(e->env_parent_id != curenv->env_id));
 		*env_store = 0;
 		return -E_BAD_ENV;
 	}
-
+// cprintf("inter3\n");
 	*env_store = e;
 	return 0;
 }
@@ -260,11 +261,12 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	e->env_tf.tf_ss = GD_UD | 3;
 	e->env_tf.tf_esp = USTACKTOP;
 	e->env_tf.tf_cs = GD_UT | 3;
+	
 	// You will set e->env_tf.tf_eip later.
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
-
+e->env_tf.tf_eflags |= FL_IF;
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
 
@@ -508,7 +510,7 @@ env_pop_tf(struct Trapframe *tf)
 {
 	// Record the CPU we are running on for user-space debugging
 	curenv->env_cpunum = cpunum();
-
+	
 	//The IRET instruction pops the segment address and offset address pushed onto the stack, 
 	//allowing the program to return to the place where the interruption occurred
 	// esp SS in the stack also will return
@@ -551,14 +553,17 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
+
 	if(curenv){
 		if(curenv->env_status==ENV_RUNNING)
 		curenv->env_status=ENV_RUNNABLE;
 	}
 	curenv=e;
 	curenv->env_status=ENV_RUNNING;
+
 	++curenv->env_runs;
 	lcr3(PADDR(curenv->env_pgdir));
+	unlock_kernel();
 	env_pop_tf(&curenv->env_tf);
 	//panic("env_run not yet implemented");
 }

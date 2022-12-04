@@ -269,7 +269,13 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	for (int i = 0; i < NCPU; ++i) {
+        boot_map_region(kern_pgdir,
+                        KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE,
+                        KSTKSIZE,
+                        (physaddr_t)PADDR(percpu_kstacks[i]),
+                        PTE_W);
+    }
 }
 
 // --------------------------------------------------------------
@@ -312,11 +318,21 @@ page_init(void)
 	pages[0].pp_link=NULL;
 	//page_free_list=&pages[0];
 	size_t i=1;
+	size_t npages_before_mp = MPENTRY_PADDR / PGSIZE;
 	//distribution the memory that before IOPHYSMEM
 	pages[1].pp_ref = 0;
 	pages[1].pp_link=NULL;
 	page_free_list=&pages[1];
-	for (i = 2; i < npages_basemem; i++) {
+	for (i = 2; i < npages_before_mp; i++) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+	extern unsigned char mpentry_start[], mpentry_end[];
+    size_t mpentry_len = mpentry_end - mpentry_start;
+    size_t mpentry_npages = (mpentry_len+PGSIZE-1) / PGSIZE;
+	i=npages_before_mp + mpentry_npages;
+	for (; i < npages_basemem; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
@@ -627,7 +643,13 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	uintptr_t start=base;
+	size=ROUNDUP(size,PGSIZE);
+	if(base+size>MMIOLIM)
+		panic("over MMIOLIM");
+		boot_map_region(kern_pgdir,base,size,pa,PTE_PCD|PTE_PWT|PTE_W);
+	base+=size;
+	return (void*)start;
 }
 
 static uintptr_t user_mem_check_addr;

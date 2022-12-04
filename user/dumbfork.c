@@ -32,6 +32,7 @@ duppage(envid_t dstenv, void *addr)
 		panic("sys_page_alloc: %e", r);
 	if ((r = sys_page_map(dstenv, addr, 0, UTEMP, PTE_P|PTE_U|PTE_W)) < 0)
 		panic("sys_page_map: %e", r);
+	// now , the UTEMP is the child's addr
 	memmove(UTEMP, addr, PGSIZE);
 	if ((r = sys_page_unmap(0, UTEMP)) < 0)
 		panic("sys_page_unmap: %e", r);
