@@ -76,13 +76,13 @@ int
 envid2env(envid_t envid, struct Env **env_store, bool checkperm)
 {
 	struct Env *e;
-
+	// cprintf("inter\n");
 	// If envid is zero, return the current environment.
 	if (envid == 0) {
 		*env_store = curenv;
 		return 0;
 	}
-
+// cprintf("inter1\n");
 	// Look up the Env structure via the index part of the envid,
 	// then check the env_id field in that struct Env
 	// to ensure that the envid is not stale
@@ -93,17 +93,18 @@ envid2env(envid_t envid, struct Env **env_store, bool checkperm)
 		*env_store = 0;
 		return -E_BAD_ENV;
 	}
-
+// cprintf("inter2\n");
 	// Check that the calling environment has legitimate permission
 	// to manipulate the specified environment.
 	// If checkperm is set, the specified environment
 	// must be either the current environment
 	// or an immediate child of the current environment.
 	if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
+		// cprintf("%d..",(e->env_parent_id != curenv->env_id));
 		*env_store = 0;
 		return -E_BAD_ENV;
 	}
-
+// cprintf("inter3\n");
 	*env_store = e;
 	return 0;
 }
@@ -119,8 +120,15 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
-
+	env_free_list=NULL;
+	for(int i=NENV-1;i>=0;--i){
+		envs[i].env_id=0;
+		envs[i].env_status=ENV_FREE;
+		envs[i].env_link=env_free_list;
+		env_free_list=&envs[i];
+	}
 	// Per-CPU part of the initialization
+	//处理器会自动将段选择符指向的段描述符中的基地址、限长和一些属性信息加载到段寄存器中的隐藏部分。
 	env_init_percpu();
 }
 
@@ -131,6 +139,9 @@ env_init_percpu(void)
 	lgdt(&gdt_pd);
 	// The kernel never uses GS or FS, so we leave those set to
 	// the user data segment.
+	//"a","b", "c" "d" ---- 分别表示要使用寄存器eax ebx ecx和edx
+	//asm volatile(“汇编命令”：input ：output：补充说明)
+	//the '"a" (GD_UD|3)' bind the c code and the register of X86
 	asm volatile("movw %%ax,%%gs" : : "a" (GD_UD|3));
 	asm volatile("movw %%ax,%%fs" : : "a" (GD_UD|3));
 	// The kernel does use ES, DS, and SS.  We'll change between
@@ -139,6 +150,8 @@ env_init_percpu(void)
 	asm volatile("movw %%ax,%%ds" : : "a" (GD_KD));
 	asm volatile("movw %%ax,%%ss" : : "a" (GD_KD));
 	// Load the kernel text segment into CS.
+	//"I"                     ---- 表示常数(0至31)
+	//"i"和"h"             ---- 表示直接操作数
 	asm volatile("ljmp %0,$1f\n 1:\n" : : "i" (GD_KT));
 	// For good measure, clear the local descriptor table (LDT),
 	// since we don't use it.
@@ -182,7 +195,12 @@ env_setup_vm(struct Env *e)
 	//    - The functions in kern/pmap.h are handy.
 
 	// LAB 3: Your code here.
-
+	e->env_pgdir=page2kva(p);
+	p->pp_ref+=1;
+	memcpy(e->env_pgdir,kern_pgdir,PGSIZE);
+	for(int i=0;i<NPDENTRIES;i++){
+		e->env_pgdir[i]|= PTE_U | PTE_W;
+	}
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
 	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
@@ -243,11 +261,12 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	e->env_tf.tf_ss = GD_UD | 3;
 	e->env_tf.tf_esp = USTACKTOP;
 	e->env_tf.tf_cs = GD_UT | 3;
+	
 	// You will set e->env_tf.tf_eip later.
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
-
+e->env_tf.tf_eflags |= FL_IF;
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
 
@@ -279,6 +298,19 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
+	uintptr_t vstart, vend;
+	struct PageInfo *pp;
+	vstart = ROUNDDOWN((uintptr_t)va, PGSIZE);
+    vend = ROUNDUP((uintptr_t)va + len, PGSIZE);
+	for(;vstart<vend;vstart+=PGSIZE){
+		if(!(pp=page_alloc(ALLOC_ZERO))){
+			panic("region_alloc error in page_alloc");
+		}
+		int err=page_insert(e->env_pgdir,pp,(void*)vstart,PTE_W|PTE_U);
+		if(err<0){
+			panic("region_alloc error in page_insert, err:%e",err);
+		}
+	}
 }
 
 //
@@ -335,10 +367,36 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  What?  (See env_run() and env_pop_tf() below.)
 
 	// LAB 3: Your code here.
-
+	// 加载可执行文件
+	struct Elf* elf_Header=(struct Elf* )binary;
+	if(elf_Header->e_magic!=ELF_MAGIC){
+		panic("Elf binary sequence not valid at header magic number...\n");
+	}
+	struct Proghdr *ph = (struct Proghdr *)(binary + elf_Header->e_phoff);
+	struct Proghdr *phEnd = ph + elf_Header->e_phnum;
+	lcr3(PADDR(e->env_pgdir));
+	for(ph;ph<phEnd;++ph){
+		if(ph->p_type!=ELF_PROG_LOAD){
+			continue;
+		}
+		if(ph->p_memsz<ph->p_filesz){
+			panic("ELF size in memory less than size in file...\n");
+		}
+		//allocate memory,get the space of the p_va
+		region_alloc(e, (void *)ph->p_va, ph->p_memsz);
+		memcpy((void *)ph->p_va, binary + ph->p_offset, ph->p_filesz);
+		memset((void *)(ph->p_va + ph->p_filesz), 0, ph->p_memsz - ph->p_filesz);
+	}
+	// switch back to kernel address mappings
+    lcr3(PADDR(kern_pgdir));
+	e->env_status = ENV_RUNNABLE;
+	//  You must also do something with the program's entry point,
+	//  to make sure that the environment starts executing there.
+	e->env_tf.tf_eip = elf_Header->e_entry;
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
 
+	region_alloc(e, (void *)(USTACKTOP - PGSIZE), PGSIZE);
 	// LAB 3: Your code here.
 }
 
@@ -353,9 +411,17 @@ void
 env_create(uint8_t *binary, enum EnvType type)
 {
 	// LAB 3: Your code here.
+	struct Env *e;
+    int err;
 
+    if ((err = env_alloc(&e, 0)) < 0)
+        panic("env_create: %e", err);
+
+    load_icode(e, binary);
+    e->env_type = ENV_TYPE_USER;
 	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
 	// LAB 5: Your code here.
+
 }
 
 //
@@ -447,7 +513,11 @@ env_pop_tf(struct Trapframe *tf)
 {
 	// Record the CPU we are running on for user-space debugging
 	curenv->env_cpunum = cpunum();
-
+	
+	//The IRET instruction pops the segment address and offset address pushed onto the stack, 
+	//allowing the program to return to the place where the interruption occurred
+	// esp SS in the stack also will return
+	//so we get a new space of stack
 	asm volatile(
 		"\tmovl %0,%%esp\n"
 		"\tpopal\n"
@@ -487,6 +557,17 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
 
-	panic("env_run not yet implemented");
+	if(curenv){
+		if(curenv->env_status==ENV_RUNNING)
+		curenv->env_status=ENV_RUNNABLE;
+	}
+	curenv=e;
+	curenv->env_status=ENV_RUNNING;
+
+	++curenv->env_runs;
+	lcr3(PADDR(curenv->env_pgdir));
+	unlock_kernel();
+	env_pop_tf(&curenv->env_tf);
+	//panic("env_run not yet implemented");
 }
 
