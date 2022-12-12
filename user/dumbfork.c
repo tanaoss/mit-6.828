@@ -51,6 +51,7 @@ dumbfork(void)
 	// so that the child will appear to have called sys_exofork() too -
 	// except that in the child, this "fake" call to sys_exofork()
 	// will return 0 instead of the envid of the child.
+	//cprintf("end: %x\n",end);
 	envid = sys_exofork();
 	if (envid < 0)
 		panic("sys_exofork: %e", envid);
@@ -71,7 +72,6 @@ dumbfork(void)
 
 	// Also copy the stack we are currently running on.
 	duppage(envid, ROUNDDOWN(&addr, PGSIZE));
-
 	// Start the child environment running
 	if ((r = sys_env_set_status(envid, ENV_RUNNABLE)) < 0)
 		panic("sys_env_set_status: %e", r);

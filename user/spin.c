@@ -12,13 +12,8 @@ umain(int argc, char **argv)
 	if ((env = fork()) == 0) {
 		cprintf("I am the child.  Spinning...\n");
 		int flag=0;
-		while (1){
-			if(flag%10000000==0){
-				cprintf("Spinning\n");
-			}
-			flag++;
-		}
-			/* do nothing */;
+		while (1);
+		/* do nothing */;
 	}
 
 	cprintf("I am the parent.  Running the child...\n");
