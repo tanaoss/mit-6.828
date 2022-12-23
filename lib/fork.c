@@ -91,7 +91,7 @@ duppage(envid_t envid, unsigned pn)
     pte = uvpt[pn];
     //pte_t tpte = uvpt[pn];
     assert(pte & PTE_P && pte & PTE_U);
-    if (pte & PTE_W || pte & PTE_COW) {
+    if ((pte & PTE_W  && !(pte & PTE_SHARE))|| pte & PTE_COW) {
         //cprintf("%x ,%x\n",tpte & PTE_W,tpte & PTE_COW);
         //tpte= uvpt[pn];
         //cprintf("%x ,%x\n",tpte & PTE_W,tpte & PTE_COW);
@@ -102,6 +102,9 @@ duppage(envid_t envid, unsigned pn)
         // tpte= uvpt[pn];
         // cprintf("%x - %x\n",tpte & PTE_W,tpte & PTE_COW);
         // cprintf("\n");
+    }else if(pte & PTE_SHARE){
+        if (r = sys_page_map(0, pg, envid, pg, pte & PTE_SYSCALL), r < 0)
+            return r;
     }
     else {
         if (r = sys_page_map(0, pg, envid, pg, PTE_P | PTE_U), r < 0)
