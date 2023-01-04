@@ -515,9 +515,14 @@ static int
 sys_time_msec(void)
 {
 	// LAB 6: Your code here.
-	panic("sys_time_msec not implemented");
+	//panic("sys_time_msec not implemented");
+    return time_msec();
 }
-
+static int 
+sys_dl_transmit(const char* buf, size_t len) {
+    user_mem_assert(curenv, buf, len, PTE_U);
+    return e1000_transmit(buf, len);    
+}
 // Dispatches to the correct kernel function, passing the arguments.
 int32_t
 syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
@@ -555,6 +560,10 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
         return sys_ipc_recv((void*)a1);
         case SYS_env_set_trapframe:
         return sys_env_set_trapframe(a1,(void*)a2);
+        case (SYS_time_msec):
+		return sys_time_msec();	
+        case SYS_dl_transmit:
+        return sys_dl_transmit((char*)a1,(size_t)a2);
         case NSYSCALLS:
         default:
             return -E_INVAL;

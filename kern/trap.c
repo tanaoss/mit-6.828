@@ -247,6 +247,7 @@ trap_dispatch(struct Trapframe *tf)
 			return;
 		case IRQ_OFFSET + IRQ_TIMER:
         lapic_eoi();
+		time_tick();
         sched_yield();
 		return;
 		case IRQ_OFFSET + IRQ_KBD:
